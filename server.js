@@ -75,6 +75,14 @@ app.post('/api/reminders', (req, res) => {
   res.sendStatus(200);
 });
 
+app.put('/api/reminders/:id', (req, res) => {
+  const { note_date, reminder_time, message } = req.body;
+  db.prepare('UPDATE reminders SET note_date = ?, reminder_time = ?, message = ? WHERE id = ?').run(
+    note_date, reminder_time, message, req.params.id
+  );
+  res.sendStatus(200);
+});
+
 app.delete('/api/reminders/:id', (req, res) => {
   db.prepare('DELETE FROM reminders WHERE id = ?').run(req.params.id);
   res.sendStatus(200);
@@ -98,6 +106,24 @@ app.post('/api/tasks', (req, res) => {
     start_datetime || '', 
     end_datetime || '', 
     status || 'Not Started'
+  );
+  res.sendStatus(200);
+});
+
+app.put('/api/tasks/:id', (req, res) => {
+  const { note_date, subject, description, start_datetime, end_datetime, status } = req.body;
+  db.prepare(`
+    UPDATE tasks 
+    SET note_date = ?, subject = ?, description = ?, start_datetime = ?, end_datetime = ?, status = ?
+    WHERE id = ?
+  `).run(
+    note_date, 
+    subject, 
+    description || '', 
+    start_datetime || '', 
+    end_datetime || '', 
+    status || 'Not Started',
+    req.params.id
   );
   res.sendStatus(200);
 });

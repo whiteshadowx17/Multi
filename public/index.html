@@ -1,117 +1,120 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MultiFlow Tracker</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.min.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.min.js"></script>
+  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+  <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
   <style>
-    .calendar-cell {
-      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-      background-size: cover;
-      background-position: center;
+    .line-clamp-3 {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
-    .calendar-cell .overlay {
-      background: linear-gradient(to bottom, rgba(15,23,42,0.35), rgba(15,23,42,0.75));
+    .line-clamp-4 {
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .ql-editor {
+      min-height: 300px;
+    }
+    #ticker-content {
+      animation: ticker-scroll 30s linear infinite;
+    }
+    @keyframes ticker-scroll {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
     }
   </style>
 </head>
-<body class="h-full flex flex-col bg-slate-950">
-
-  <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="px-8 py-6 border-b border-slate-800 flex items-center justify-between">
+<body class="bg-slate-950 text-slate-100 min-h-screen p-8">
+  <div class="max-w-7xl mx-auto">
+    <div class="flex items-center justify-between mb-8">
       <div class="flex items-center gap-4">
-        <button onclick="prevWeek()" class="px-5 py-2 hover:bg-slate-800 rounded-xl text-xl">←</button>
-        <div id="month-title" class="text-2xl font-medium"></div>
-        <button onclick="nextWeek()" class="px-5 py-2 hover:bg-slate-800 rounded-xl text-xl">→</button>
+        <button onclick="prevWeek()" class="px-4 py-2 bg-slate-800 rounded-xl hover:bg-slate-700">←</button>
+        <h1 id="month-title" class="text-3xl font-bold"></h1>
+        <button onclick="nextWeek()" class="px-4 py-2 bg-slate-800 rounded-xl hover:bg-slate-700">→</button>
       </div>
-      <button onclick="today()" class="px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-2xl text-sm font-medium">Today</button>
+      <button onclick="today()" class="px-4 py-2 bg-blue-600 rounded-xl hover:bg-blue-500">Today</button>
     </div>
 
-    <!-- Calendar -->
-    <div class="flex-1 p-8 overflow-auto">
-      <div class="grid grid-cols-7 gap-6 mb-6 text-center text-sm font-medium text-slate-400">
-        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
-      </div>
-      <div id="calendar" class="grid grid-cols-7 gap-6"></div>
-    </div>
-  </div>
+    <!-- Calendar Grid -->
+    <div id="calendar" class="grid grid-cols-7 gap-4"></div>
 
-  <!-- Note Modal -->
-  <div id="note-modal" onclick="if(event.target.id==='note-modal') closeModal()" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-    <div onclick="event.stopImmediatePropagation()" class="bg-slate-900 w-full max-w-6xl mx-4 h-[92vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
-      <div class="px-8 py-5 border-b flex items-center justify-between">
-        <span id="modal-date" class="text-xl font-medium"></span>
-        <div class="flex gap-4">
-          <button onclick="showReminderForm()" class="flex items-center gap-2 text-amber-400 hover:text-amber-300">🛎️ Reminder</button>
-          <button onclick="showTaskForm()" class="flex items-center gap-2 text-emerald-400 hover:text-emerald-300">📋 Task</button>
-          <button onclick="closeModal()" class="px-6 py-2 text-slate-400 hover:text-white">Done</button>
+    <!-- Note Modal -->
+    <div id="note-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-slate-800 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div class="p-6 border-b border-slate-700 flex justify-between items-center">
+          <h2 id="modal-date-display" class="text-2xl font-bold"></h2>
+          <button onclick="closeModal()" class="text-3xl leading-none">×</button>
         </div>
-      </div>
-
-      <!-- Reminders & Tasks List -->
-      <div class="px-8 py-4 border-b bg-slate-950 grid grid-cols-2 gap-6">
-        <div>
-          <h3 class="text-amber-400 text-sm font-medium mb-3">Reminders</h3>
-          <div id="modal-reminders-list" class="space-y-2 max-h-48 overflow-auto"></div>
+        
+        <div class="flex-1 flex flex-col md:flex-row overflow-auto">
+          <div id="editor-container" class="flex-1 p-6"></div>
+          
+          <div class="w-full md:w-96 border-l border-slate-700 flex flex-col">
+            <!-- Reminders Section -->
+            <div class="p-6 border-b border-slate-700">
+              <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-amber-400">Reminders</h3>
+                <button onclick="showReminderForm()" class="text-2xl leading-none">+</button>
+              </div>
+              <div id="modal-reminders-list" class="max-h-40 overflow-y-auto"></div>
+            </div>
+            
+            <!-- Tasks Section -->
+            <div class="p-6 flex-1">
+              <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-blue-400">Task Orders</h3>
+                <button onclick="showTaskForm()" class="text-2xl leading-none">+</button>
+              </div>
+              <div id="modal-tasks-list" class="max-h-40 overflow-y-auto"></div>
+            </div>
+          </div>
         </div>
-        <div>
-          <h3 class="text-emerald-400 text-sm font-medium mb-3">Tasks</h3>
-          <div id="modal-tasks-list" class="space-y-2 max-h-48 overflow-auto"></div>
-        </div>
-      </div>
-
-      <div id="editor-container" class="flex-1 p-8 overflow-auto"></div>
-    </div>
-  </div>
-
-  <!-- Reminder Form -->
-  <div id="reminder-form" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
-    <div class="bg-slate-900 w-full max-w-md mx-4 rounded-3xl p-8">
-      <h2 class="text-xl font-medium mb-6">New Reminder</h2>
-      <input id="reminder-subject" type="text" placeholder="Subject" class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 mb-4">
-      <textarea id="reminder-desc" placeholder="Description (optional)" class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 h-24 mb-4"></textarea>
-      <input id="reminder-time" type="time" class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 mb-6">
-      <div class="flex gap-3">
-        <button onclick="hideReminderForm()" class="flex-1 py-3 text-slate-400 hover:bg-slate-800 rounded-2xl">Cancel</button>
-        <button onclick="saveReminder()" class="flex-1 py-3 bg-amber-500 hover:bg-amber-600 rounded-2xl">Save</button>
       </div>
     </div>
-  </div>
 
-  <!-- Task Form -->
-  <div id="task-form" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
-    <div class="bg-slate-900 w-full max-w-md mx-4 rounded-3xl p-8">
-      <h2 class="text-xl font-medium mb-6">New Task / Work Order</h2>
-      <input id="task-subject" type="text" placeholder="Subject" class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 mb-4">
-      <textarea id="task-desc" placeholder="Description" class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 h-24 mb-4"></textarea>
-      
-      <div class="grid grid-cols-2 gap-4 mb-4">
-        <div>
-          <label class="text-xs text-slate-400 block mb-1">Start</label>
-          <input id="task-start" type="datetime-local" class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3">
-        </div>
-        <div>
-          <label class="text-xs text-slate-400 block mb-1">Finish</label>
-          <input id="task-end" type="datetime-local" class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3">
+    <!-- Reminder Form Modal -->
+    <div id="reminder-form" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-slate-800 rounded-3xl w-full max-w-md p-6">
+        <h3 class="text-xl font-bold mb-4">Create Reminder</h3>
+        <div class="space-y-4">
+          <input type="text" id="reminder-subject-input" name="reminder-subject" placeholder="Subject" class="w-full bg-slate-900 rounded-2xl px-4 py-3" autocomplete="off">
+          <input type="text" id="reminder-desc-input" name="reminder-description" placeholder="Description (optional)" class="w-full bg-slate-900 rounded-2xl px-4 py-3" autocomplete="off">
+          <input type="time" id="reminder-time-input" name="reminder-time" class="w-full bg-slate-900 rounded-2xl px-4 py-3" autocomplete="off">
+          <div class="flex gap-3">
+            <button type="button" onclick="hideReminderForm()" class="flex-1 py-3 rounded-2xl border border-slate-700">Cancel</button>
+            <button type="button" onclick="saveReminder()" class="flex-1 py-3 rounded-2xl bg-amber-600">Save</button>
+          </div>
         </div>
       </div>
+    </div>
 
-      <div class="mb-6">
-        <label class="text-xs text-slate-400 block mb-1">Status</label>
-        <select id="task-status" class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3">
-          <option value="Not Started">Not Started</option>
-          <option value="Working">Working</option>
-          <option value="Completed">Completed</option>
-        </select>
-      </div>
-
-      <div class="flex gap-3">
-        <button onclick="hideTaskForm()" class="flex-1 py-3 text-slate-400 hover:bg-slate-800 rounded-2xl">Cancel</button>
-        <button onclick="saveTask()" class="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 rounded-2xl">Save Task</button>
+    <!-- Task Form Modal -->
+    <div id="task-form" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-slate-800 rounded-3xl w-full max-w-md p-6">
+        <h3 class="text-xl font-bold mb-4">Create Task Order</h3>
+        <div class="space-y-4">
+          <input type="text" id="task-subject-input" name="task-subject" placeholder="Subject" class="w-full bg-slate-900 rounded-2xl px-4 py-3" autocomplete="off">
+          <textarea id="task-desc-textarea" name="task-description" placeholder="Description (optional)" class="w-full bg-slate-900 rounded-2xl px-4 py-3 h-24" autocomplete="off"></textarea>
+          <input type="datetime-local" id="task-start-input" name="task-start" class="w-full bg-slate-900 rounded-2xl px-4 py-3" autocomplete="off">
+          <input type="datetime-local" id="task-end-input" name="task-end" class="w-full bg-slate-900 rounded-2xl px-4 py-3" autocomplete="off">
+          <select id="task-status-select" name="task-status" class="w-full bg-slate-900 rounded-2xl px-4 py-3">
+            <option value="Not Started">Not Started</option>
+            <option value="Working">Working</option>
+            <option value="Completed">Completed</option>
+          </select>
+          <div class="flex gap-3">
+            <button type="button" onclick="hideTaskForm()" class="flex-1 py-3 rounded-2xl border border-slate-700">Cancel</button>
+            <button type="button" onclick="saveTask()" class="flex-1 py-3 rounded-2xl bg-blue-600">Save</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
