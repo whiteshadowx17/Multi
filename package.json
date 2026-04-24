@@ -20,6 +20,7 @@
   "homepage": "https://gitlab.com/whiteshadowx17/Multi_Flow_Tracker#readme",
   "dependencies": {
     "better-sqlite3": "^12.9.0",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.4.0"
   }
 }
