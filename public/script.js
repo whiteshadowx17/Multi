@@ -5,6 +5,28 @@ let tickerAnimation = null;
 
 displayStart.setDate(displayStart.getDate() - 10);
 
+// Custom Blot for Horizontal Line
+const Inline = Quill.import('blots/inline');
+const Embed = Quill.import('blots/embed');
+
+class DividerBlot extends Embed {
+  static create(value) {
+    let node = super.create();
+    node.innerHTML = '<hr style="border-top: 1px solid #ccc; margin: 10px 0;">';
+    return node;
+  }
+  
+  static value(node) {
+    return true;
+  }
+}
+
+DividerBlot.blotName = 'divider';
+DividerBlot.tagName = 'div';
+DividerBlot.className = 'ql-divider';
+
+Quill.register(DividerBlot);
+
 function formatDate(d) {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -54,6 +76,27 @@ function extractImageFromDelta(delta) {
     if (op.insert?.image) return op.insert.image;
   }
   return null;
+}
+
+// THIS MUST BE DEFINED BEFORE IT'S USED
+async function loadModalData(dateStr) {
+  try {
+    const [remRes, taskRes] = await Promise.all([
+      fetch('/api/reminders'),
+      fetch('/api/tasks')
+    ]);
+
+    const allReminders = await remRes.json();
+    const allTasks = await taskRes.json();
+
+    const dateReminders = allReminders.filter(r => r.note_date === dateStr);
+    const dateTasks = allTasks.filter(t => t.note_date === dateStr);
+
+    renderReminders(dateReminders);
+    renderTasks(dateTasks);
+  } catch (e) {
+    console.error('Failed to load modal data:', e);
+  }
 }
 
 // Ticker functions
@@ -257,26 +300,6 @@ async function loadCalendar() {
   }
 }
 
-async function loadModalData(dateStr) {
-  try {
-    const [remRes, taskRes] = await Promise.all([
-      fetch('/api/reminders'),
-      fetch('/api/tasks')
-    ]);
-
-    const allReminders = await remRes.json();
-    const allTasks = await taskRes.json();
-
-    const dateReminders = allReminders.filter(r => r.note_date === dateStr);
-    const dateTasks = allTasks.filter(t => t.note_date === dateStr);
-
-    renderReminders(dateReminders);
-    renderTasks(dateTasks);
-  } catch (e) {
-    console.error('Failed to load modal data:', e);
-  }
-}
-
 function renderReminders(reminders) {
   const container = document.getElementById('modal-reminders-list');
   if (!container) return;
@@ -291,16 +314,21 @@ function renderReminders(reminders) {
   reminders.forEach(rem => {
     const item = document.createElement('div');
     item.className = 'flex items-center justify-between bg-slate-800 rounded-2xl px-4 py-3 text-sm mb-2 cursor-pointer hover:bg-slate-700';
-    item.onclick = () => editReminder(rem);
     item.innerHTML = `
       <div class="flex-1">
         <div class="font-medium text-amber-300">${rem.message}</div>
         <div class="text-xs text-slate-500 mt-1">${rem.reminder_time || 'No time set'}</div>
       </div>
       <button 
-        onclick="deleteReminder(${rem.id}); event.stopImmediatePropagation();"
+        onclick="deleteReminder(${rem.id}); event.stopPropagation();"
         class="ml-4 px-3 py-1 text-red-400 hover:bg-red-900/50 rounded-xl text-xl leading-none">×</button>
     `;
+    
+    // Add click handler for the entire item (except delete button)
+    item.querySelector('.flex-1').addEventListener('click', () => {
+      editReminder(rem);
+    });
+    
     container.appendChild(item);
   });
 }
@@ -328,7 +356,6 @@ function renderTasks(tasks) {
 
     const item = document.createElement('div');
     item.className = 'flex items-center justify-between bg-slate-800 rounded-2xl px-4 py-3 text-sm mb-2 cursor-pointer hover:bg-slate-700';
-    item.onclick = () => editTask(task);
     item.innerHTML = `
       <div class="flex-1">
         <div class="flex justify-between items-start">
@@ -339,9 +366,15 @@ function renderTasks(tasks) {
         ${timeInfo}
       </div>
       <button 
-        onclick="deleteTask(${task.id}); event.stopImmediatePropagation();"
+        onclick="deleteTask(${task.id}); event.stopPropagation();"
         class="ml-4 px-3 py-1 text-red-400 hover:bg-red-900/50 rounded-xl text-xl leading-none">×</button>
     `;
+    
+    // Add click handler for the entire item (except delete button)
+    item.querySelector('.flex-1').addEventListener('click', () => {
+      editTask(task);
+    });
+    
     container.appendChild(item);
   });
 }
@@ -350,7 +383,7 @@ async function deleteReminder(id) {
   if (!confirm('Delete this reminder?')) return;
   try {
     await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
-    if (currentDate) loadModalData(currentDate);
+    if (currentDate) await loadModalData(currentDate);
     loadCalendar(); // Refresh calendar
   } catch (e) {
     console.error(e);
@@ -362,7 +395,7 @@ async function deleteTask(id) {
   if (!confirm('Delete this task?')) return;
   try {
     await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
-    if (currentDate) loadModalData(currentDate);
+    if (currentDate) await loadModalData(currentDate);
     loadCalendar(); // Refresh calendar
   } catch (e) {
     console.error(e);
@@ -377,8 +410,18 @@ function editReminder(reminder) {
   const timeInput = document.getElementById('reminder-time-input');
   
   if (subjectInput && descInput && timeInput) {
-    subjectInput.value = extractSubject(reminder.message);
-    descInput.value = extractDescription(reminder.message);
+    // Extract subject and description from message
+    let subject = reminder.message;
+    let description = '';
+    
+    if (reminder.message.includes(' - ')) {
+      const parts = reminder.message.split(' - ');
+      subject = parts[0];
+      description = parts.slice(1).join(' - '); // In case description has dashes
+    }
+    
+    subjectInput.value = subject;
+    descInput.value = description;
     timeInput.value = reminder.reminder_time || '';
     
     // Store the ID for updating
@@ -386,6 +429,11 @@ function editReminder(reminder) {
     if (form) {
       form.setAttribute('data-id', reminder.id);
       form.setAttribute('data-mode', 'edit');
+      // Update button text to indicate edit mode
+      const saveButton = form.querySelector('.save-button') || form.querySelector('button.bg-amber-600');
+      if (saveButton) {
+        saveButton.textContent = 'Update';
+      }
     }
     
     showReminderForm();
@@ -415,7 +463,7 @@ function editTask(task) {
   const statusSelect = document.getElementById('task-status-select');
   
   if (subjectInput && descInput && startInput && endInput && statusSelect) {
-    subjectInput.value = task.subject;
+    subjectInput.value = task.subject || '';
     descInput.value = task.description || '';
     startInput.value = task.start_datetime || '';
     endInput.value = task.end_datetime || '';
@@ -426,6 +474,11 @@ function editTask(task) {
     if (form) {
       form.setAttribute('data-id', task.id);
       form.setAttribute('data-mode', 'edit');
+      // Update button text to indicate edit mode
+      const saveButton = form.querySelector('.save-button') || form.querySelector('button.bg-blue-600');
+      if (saveButton) {
+        saveButton.textContent = 'Update';
+      }
     }
     
     showTaskForm();
@@ -455,20 +508,44 @@ async function openNoteModal(dateStr) {
     container.innerHTML = '<div id="editor" class="bg-white text-slate-900 rounded-2xl shadow-inner flex-1"></div>';
   }
 
+  // Extended toolbar with horizontal line tool
   quill = new Quill('#editor', {
     theme: 'snow',
     modules: {
       toolbar: [
         [{ 'header': [1, 2, 3, false] }],
-        ['bold', 'italic', 'underline'],
+        ['bold', 'italic', 'underline', 'strike'],
         [{ 'color': [] }, { 'background': [] }],
-        [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-        ['link', 'image'],
-        ['clean']
+        [{ 'align': [] }],
+        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+        [{ 'indent': '-1'}, { 'indent': '+1' }],
+        ['link', 'image', 'video'],
+        ['clean'],
+        ['divider'] // Horizontal line tool
       ]
     },
     placeholder: 'Write your notes here...'
   });
+
+  // Add custom handler for divider button
+  const toolbar = quill.getModule('toolbar');
+  toolbar.addHandler('divider', function() {
+    const range = quill.getSelection();
+    if (range) {
+      quill.insertEmbed(range.index, 'divider', true, 'user');
+      quill.setSelection(range.index + 1, 0);
+    }
+  });
+
+  // Style the divider button
+  setTimeout(() => {
+    const dividerButton = document.querySelector('.ql-divider');
+    if (dividerButton) {
+      dividerButton.innerHTML = '<i>―</i>'; // Horizontal line symbol
+      dividerButton.title = 'Insert Horizontal Line';
+      dividerButton.style.fontWeight = 'bold';
+    }
+  }, 100);
 
   try {
     const res = await fetch(`/api/notes/${dateStr}`);
@@ -512,13 +589,14 @@ function showReminderForm() {
   const form = document.getElementById('reminder-form');
   
   if (subjectInput && descInput && timeInput && form) {
-    subjectInput.value = '';
-    descInput.value = '';
-    timeInput.value = '';
+    // Reset button text to "Save" when showing create form
+    if (form.getAttribute('data-mode') !== 'edit') {
+      const saveButton = form.querySelector('.save-button') || form.querySelector('button.bg-amber-600');
+      if (saveButton) {
+        saveButton.textContent = 'Save';
+      }
+    }
     
-    // Reset form mode to create
-    form.removeAttribute('data-id');
-    form.setAttribute('data-mode', 'create');
     form.classList.remove('hidden');
   }
 }
@@ -597,15 +675,14 @@ function showTaskForm() {
   const form = document.getElementById('task-form');
   
   if (subjectInput && descInput && startInput && endInput && statusSelect && form) {
-    subjectInput.value = '';
-    descInput.value = '';
-    startInput.value = '';
-    endInput.value = '';
-    statusSelect.value = 'Not Started';
+    // Reset button text to "Save" when showing create form
+    if (form.getAttribute('data-mode') !== 'edit') {
+      const saveButton = form.querySelector('.save-button') || form.querySelector('button.bg-blue-600');
+      if (saveButton) {
+        saveButton.textContent = 'Save';
+      }
+    }
     
-    // Reset form mode to create
-    form.removeAttribute('data-id');
-    form.setAttribute('data-mode', 'create');
     form.classList.remove('hidden');
   }
 }

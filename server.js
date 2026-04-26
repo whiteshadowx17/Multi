@@ -17,16 +17,6 @@ app.use(express.static('public', {
   etag: true
 }));
 
-// Rate limiting for API endpoints
-const rateLimit = require('express-rate-limit');
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
-});
-
-app.use('/api/', apiLimiter);
-
 // Database setup with error handling
 let db;
 try {
@@ -177,6 +167,7 @@ app.post('/api/reminders', (req, res) => {
   }
 });
 
+// UPDATE REMINDER ENDPOINT
 app.put('/api/reminders/:id', (req, res) => {
   try {
     const { id } = req.params;
@@ -264,6 +255,7 @@ app.post('/api/tasks', (req, res) => {
   }
 });
 
+// UPDATE TASK ENDPOINT
 app.put('/api/tasks/:id', (req, res) => {
   try {
     const { id } = req.params;

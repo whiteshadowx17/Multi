@@ -22,6 +22,16 @@
     }
     .ql-editor {
       min-height: 300px;
+      max-height: 500px;
+      overflow-y: auto;
+      word-wrap: break-word;
+    }
+    /* Custom divider style */
+    .ql-divider {
+      height: 0;
+      margin: 20px 0;
+      border-top: 1px solid #ccc;
+      display: block;
     }
     #ticker-content {
       animation: ticker-scroll 30s linear infinite;
@@ -29,6 +39,38 @@
     @keyframes ticker-scroll {
       0% { transform: translateX(100%); }
       100% { transform: translateX(-100%); }
+    }
+    /* Image sizing */
+    .ql-editor img {
+      max-width: 100%;
+      height: auto;
+    }
+    /* Video sizing */
+    .ql-video {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16/9;
+    }
+    /* Toolbar button styling */
+    .ql-toolbar .ql-divider {
+      width: 24px;
+      height: 24px;
+      display: inline-block;
+      text-align: center;
+      line-height: 24px;
+      cursor: pointer;
+    }
+    /* Progress bar styling */
+    .progress-bar {
+      height: 8px;
+      background-color: #374151;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background-color: #3b82f6;
+      transition: width 0.3s ease;
     }
   </style>
 </head>
@@ -40,13 +82,20 @@
         <h1 id="month-title" class="text-3xl font-bold"></h1>
         <button onclick="nextWeek()" class="px-4 py-2 bg-slate-800 rounded-xl hover:bg-slate-700">→</button>
       </div>
-      <button onclick="today()" class="px-4 py-2 bg-blue-600 rounded-xl hover:bg-blue-500">Today</button>
+      <div class="flex gap-2">
+        <button onclick="today()" class="px-4 py-2 bg-blue-600 rounded-xl hover:bg-blue-500">Today</button>
+        <button onclick="exportData()" class="px-4 py-2 bg-green-600 rounded-xl hover:bg-green-500">Export</button>
+        <label class="px-4 py-2 bg-purple-600 rounded-xl hover:bg-purple-500 cursor-pointer">
+          Import
+          <input type="file" accept=".json" onchange="importData(event)" class="hidden">
+        </label>
+      </div>
     </div>
 
     <!-- Calendar Grid -->
     <div id="calendar" class="grid grid-cols-7 gap-4"></div>
 
-    <!-- Note Modal -->
+     <!-- Note Modal -->
     <div id="note-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden">
       <div class="bg-slate-800 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col">
         <div class="p-6 border-b border-slate-700 flex justify-between items-center">
@@ -90,7 +139,7 @@
           <input type="time" id="reminder-time-input" name="reminder-time" class="w-full bg-slate-900 rounded-2xl px-4 py-3" autocomplete="off">
           <div class="flex gap-3">
             <button type="button" onclick="hideReminderForm()" class="flex-1 py-3 rounded-2xl border border-slate-700">Cancel</button>
-            <button type="button" onclick="saveReminder()" class="flex-1 py-3 rounded-2xl bg-amber-600">Save</button>
+            <button type="button" onclick="saveReminder()" class="flex-1 py-3 rounded-2xl bg-amber-600 save-button">Save</button>
           </div>
         </div>
       </div>
@@ -112,7 +161,7 @@
           </select>
           <div class="flex gap-3">
             <button type="button" onclick="hideTaskForm()" class="flex-1 py-3 rounded-2xl border border-slate-700">Cancel</button>
-            <button type="button" onclick="saveTask()" class="flex-1 py-3 rounded-2xl bg-blue-600">Save</button>
+            <button type="button" onclick="saveTask()" class="flex-1 py-3 rounded-2xl bg-blue-600 save-button">Save</button>
           </div>
         </div>
       </div>
