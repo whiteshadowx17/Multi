@@ -39,24 +39,18 @@ function parseDate(dateStr) {
   return new Date(parts[0], parts[1] - 1, parts[2]);
 }
 
-function getPreview(delta) {
-  if (!delta?.ops) return { text: '', image: null };
-  let text = '';
-  let image = null;
+// Get first line of text from Quill content
+function getFirstLine(delta) {
+  if (!delta?.ops) return '';
+  let firstLine = '';
   for (const op of delta.ops) {
-    if (typeof op.insert === 'string') text += op.insert;
-    else if (op.insert?.image) image = op.insert.image;
+    if (typeof op.insert === 'string') {
+      const lines = op.insert.split('\n');
+      firstLine += lines[0];
+      if (lines.length > 1) break; // Stop at first line break
+    }
   }
-  return {
-    text: text.slice(0, 90) + (text.length > 90 ? '…' : ''),
-    image
-  };
-}
-
-// Function to truncate text with ellipsis
-function truncateText(text, maxLength) {
-  if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength) + '…';
+  return firstLine.slice(0, 50) + (firstLine.length > 50 ? '…' : '');
 }
 
 // Get status color classes
@@ -198,7 +192,6 @@ async function loadCalendar() {
       const dateStr = formatDate(date);
       const isToday = dateStr === formatDate(new Date());
       const note = notes[dateStr];
-      const preview = getPreview(note);
       
       // Get reminders and tasks for this date
       const dayReminders = allReminders.filter(r => r.note_date === dateStr);
@@ -220,7 +213,7 @@ async function loadCalendar() {
       }
 
       const cell = document.createElement('div');
-      cell.className = `calendar-cell border border-slate-700 rounded-3xl p-0 flex flex-col cursor-pointer hover:ring-2 hover:ring-blue-400 h-full min-h-[200px] relative overflow-hidden ${isToday ? 'ring-2 ring-blue-400' : ''}`;
+      cell.className = `calendar-cell border border-slate-700 rounded-3xl p-0 flex flex-col cursor-pointer hover:ring-2 hover:ring-blue-400 h-full min-h-[220px] relative overflow-hidden ${isToday ? 'ring-2 ring-blue-400' : ''}`;
       
       // Apply background with opacity if image exists
       if (bgImage) {
@@ -229,59 +222,51 @@ async function loadCalendar() {
         cell.classList.add('bg-slate-900');
       }
 
-      // Top half - Note preview
-      let topHtml = `<div class="relative z-10 p-6 h-1/2">`;
-      topHtml += `<div class="text-4xl font-semibold mb-4 ${isToday ? 'text-blue-400' : 'text-slate-100'}">${date.getDate()}</div>`;
+      // Top half - Note preview (show first line only)
+      let topHtml = `<div class="relative z-10 p-4 h-3/4">`;
+      topHtml += `<div class="text-4xl font-semibold mb-2 ${isToday ? 'text-blue-400' : 'text-slate-100'}">${date.getDate()}</div>`;
       
-      if (preview.text) {
-        topHtml += `<div class="flex-1 text-sm text-slate-200 line-clamp-3">${preview.text}</div>`;
+      if (note) {
+        try {
+          const noteContent = typeof note === 'string' ? JSON.parse(note) : note;
+          const firstLine = getFirstLine(noteContent);
+          if (firstLine) {
+            topHtml += `<div class="flex-1 text-sm text-slate-200">${firstLine}</div>`;
+          }
+        } catch (e) {
+          // If parsing fails, try to show raw content
+          if (typeof note === 'string') {
+            const firstLine = note.split('\n')[0].slice(0, 50) + (note.length > 50 ? '…' : '');
+            topHtml += `<div class="flex-1 text-sm text-slate-200">${firstLine}</div>`;
+          }
+        }
       }
       topHtml += `</div>`;
 
-      // Bottom half - Notifications area
-      let bottomHtml = `<div class="relative z-10 h-1/2 border-t border-slate-700 flex">`;
+      // Bottom quarter - Notifications area (25% height)
+      let bottomHtml = `<div class="relative z-10 h-1/4 border-t border-slate-700 flex">`;
       
-      // Left quarter - Reminders
-      bottomHtml += `<div class="w-1/2 p-3 border-r border-slate-700">`;
+      // Left quarter - Reminders (show icon and count)
+      bottomHtml += `<div class="w-1/2 p-2 border-r border-slate-700 flex items-center justify-center">`;
       if (dayReminders.length > 0) {
-        // Show first reminder normally
-        const firstReminder = dayReminders[0];
-        bottomHtml += `<div class="flex items-center gap-2 text-amber-400 text-xs mb-1">
+        bottomHtml += `<div class="flex items-center gap-2 text-amber-400 text-sm">
           <span class="text-lg">🔔</span>
-          <span>${truncateText(firstReminder.message, 15)}</span>
+          <span>${dayReminders.length}</span>
         </div>`;
-        
-        // Show additional reminders as grouped bubble if needed
-        if (dayReminders.length > 1) {
-          bottomHtml += `<div class="flex items-center gap-1 text-amber-400 text-xs mt-1">
-            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-900/50 text-xs">+${dayReminders.length - 1}</span>
-          </div>`;
-        }
       } else {
-        bottomHtml += `<div class="text-slate-500 text-xs italic">No reminders</div>`;
+        bottomHtml += `<div class="text-slate-500 text-xs">No reminders</div>`;
       }
       bottomHtml += `</div>`;
 
-      // Right quarter - Tasks
-      bottomHtml += `<div class="w-1/2 p-3">`;
+      // Right quarter - Tasks (show icon and count)
+      bottomHtml += `<div class="w-1/2 p-2 flex items-center justify-center">`;
       if (dayTasks.length > 0) {
-        // Show first task normally with status
-        const firstTask = dayTasks[0];
-        const statusColorClass = getStatusColor(firstTask.status);
-        bottomHtml += `<div class="flex items-center gap-2 ${statusColorClass} text-xs mb-1">
+        bottomHtml += `<div class="flex items-center gap-2 text-blue-400 text-sm">
           <span class="text-lg">📋</span>
-          <span>${truncateText(firstTask.subject, 12)}</span>
-          <span class="text-xs">[${firstTask.status}]</span>
+          <span>${dayTasks.length}</span>
         </div>`;
-        
-        // Show additional tasks as grouped bubble if needed
-        if (dayTasks.length > 1) {
-          bottomHtml += `<div class="flex items-center gap-1 ${statusColorClass} text-xs mt-1">
-            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-700 text-xs">+${dayTasks.length - 1}</span>
-          </div>`;
-        }
       } else {
-        bottomHtml += `<div class="text-slate-500 text-xs italic">No tasks</div>`;
+        bottomHtml += `<div class="text-slate-500 text-xs">No tasks</div>`;
       }
       bottomHtml += `</div>`;
       
@@ -429,11 +414,6 @@ function editReminder(reminder) {
     if (form) {
       form.setAttribute('data-id', reminder.id);
       form.setAttribute('data-mode', 'edit');
-      // Update button text to indicate edit mode
-      const saveButton = form.querySelector('.save-button') || form.querySelector('button.bg-amber-600');
-      if (saveButton) {
-        saveButton.textContent = 'Update';
-      }
     }
     
     showReminderForm();
@@ -474,11 +454,6 @@ function editTask(task) {
     if (form) {
       form.setAttribute('data-id', task.id);
       form.setAttribute('data-mode', 'edit');
-      // Update button text to indicate edit mode
-      const saveButton = form.querySelector('.save-button') || form.querySelector('button.bg-blue-600');
-      if (saveButton) {
-        saveButton.textContent = 'Update';
-      }
     }
     
     showTaskForm();
@@ -589,12 +564,12 @@ function showReminderForm() {
   const form = document.getElementById('reminder-form');
   
   if (subjectInput && descInput && timeInput && form) {
-    // Reset button text to "Save" when showing create form
+    // Only reset form fields if creating new (not editing)
     if (form.getAttribute('data-mode') !== 'edit') {
-      const saveButton = form.querySelector('.save-button') || form.querySelector('button.bg-amber-600');
-      if (saveButton) {
-        saveButton.textContent = 'Save';
-      }
+      subjectInput.value = '';
+      descInput.value = '';
+      timeInput.value = '';
+      form.removeAttribute('data-id');
     }
     
     form.classList.remove('hidden');
@@ -605,6 +580,9 @@ function hideReminderForm() {
   const form = document.getElementById('reminder-form');
   if (form) {
     form.classList.add('hidden');
+    // Reset form mode
+    form.removeAttribute('data-id');
+    form.removeAttribute('data-mode');
   }
 }
 
@@ -614,7 +592,10 @@ async function saveReminder() {
   const timeInput = document.getElementById('reminder-time-input');
   const form = document.getElementById('reminder-form');
   
-  if (!subjectInput || !descInput || !timeInput || !form) return;
+  if (!subjectInput || !descInput || !timeInput || !form) {
+    console.error('Form elements not found');
+    return;
+  }
   
   const subject = subjectInput.value.trim();
   const desc = descInput.value.trim();
@@ -628,11 +609,14 @@ async function saveReminder() {
   }
 
   const message = desc ? `${subject} - ${desc}` : subject;
+  console.log('Saving reminder:', { mode, id, currentDate, time, message });
 
   try {
+    let response;
     if (mode === 'edit' && id) {
       // Update existing reminder
-      await fetch(`/api/reminders/${id}`, {
+      console.log('Updating reminder with ID:', id);
+      response = await fetch(`/api/reminders/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -643,7 +627,8 @@ async function saveReminder() {
       });
     } else {
       // Create new reminder
-      await fetch('/api/reminders', {
+      console.log('Creating new reminder');
+      response = await fetch('/api/reminders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -654,6 +639,10 @@ async function saveReminder() {
       });
     }
 
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
     hideReminderForm();
     if (currentDate) {
       await loadModalData(currentDate);
@@ -661,7 +650,7 @@ async function saveReminder() {
     }
   } catch (error) {
     console.error('Error saving reminder:', error);
-    alert('Failed to save reminder');
+    alert('Failed to save reminder: ' + error.message);
   }
 }
 
@@ -675,12 +664,14 @@ function showTaskForm() {
   const form = document.getElementById('task-form');
   
   if (subjectInput && descInput && startInput && endInput && statusSelect && form) {
-    // Reset button text to "Save" when showing create form
+    // Only reset form fields if creating new (not editing)
     if (form.getAttribute('data-mode') !== 'edit') {
-      const saveButton = form.querySelector('.save-button') || form.querySelector('button.bg-blue-600');
-      if (saveButton) {
-        saveButton.textContent = 'Save';
-      }
+      subjectInput.value = '';
+      descInput.value = '';
+      startInput.value = '';
+      endInput.value = '';
+      statusSelect.value = 'Not Started';
+      form.removeAttribute('data-id');
     }
     
     form.classList.remove('hidden');
@@ -691,6 +682,9 @@ function hideTaskForm() {
   const form = document.getElementById('task-form');
   if (form) {
     form.classList.add('hidden');
+    // Reset form mode
+    form.removeAttribute('data-id');
+    form.removeAttribute('data-mode');
   }
 }
 
@@ -702,7 +696,10 @@ async function saveTask() {
   const statusSelect = document.getElementById('task-status-select');
   const form = document.getElementById('task-form');
   
-  if (!subjectInput || !descInput || !startInput || !endInput || !statusSelect || !form) return;
+  if (!subjectInput || !descInput || !startInput || !endInput || !statusSelect || !form) {
+    console.error('Form elements not found');
+    return;
+  }
   
   const subject = subjectInput.value.trim();
   const desc = descInput.value.trim();
@@ -717,10 +714,14 @@ async function saveTask() {
     return;
   }
 
+  console.log('Saving task:', { mode, id, currentDate, subject, desc, start, end, status });
+
   try {
+    let response;
     if (mode === 'edit' && id) {
       // Update existing task
-      await fetch(`/api/tasks/${id}`, {
+      console.log('Updating task with ID:', id);
+      response = await fetch(`/api/tasks/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -734,7 +735,8 @@ async function saveTask() {
       });
     } else {
       // Create new task
-      await fetch('/api/tasks', {
+      console.log('Creating new task');
+      response = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -748,6 +750,10 @@ async function saveTask() {
       });
     }
 
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
     hideTaskForm();
     if (currentDate) {
       await loadModalData(currentDate);
@@ -755,10 +761,9 @@ async function saveTask() {
     }
   } catch (error) {
     console.error('Error saving task:', error);
-    alert('Failed to save task');
+    alert('Failed to save task: ' + error.message);
   }
 }
-
 function prevWeek() { 
   displayStart.setDate(displayStart.getDate() - 7); 
   loadCalendar(); 
@@ -799,3 +804,4 @@ window.addEventListener('beforeunload', () => {
     cancelAnimationFrame(tickerAnimation);
   }
 });
+

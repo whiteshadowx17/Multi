@@ -7,7 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// Security middleware
+// Security Middleware
 app.disable('x-powered-by');
 app.use(express.json({ limit: '10mb' }));
 
@@ -326,7 +326,7 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Error handling middleware
+// Error handling Middleware
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
