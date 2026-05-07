@@ -44,3 +44,5 @@ Run with process manager (PM2 recommended):
 npm install -g pm2
 pm2 start server.js --name "multiflow-tracker"
 This production-ready version includes all necessary safeguards, performance optimizations, and operational features for reliable deployment.
+
+Changing the name of this project for now to Life-Flow Multi Tracker
