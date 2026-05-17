@@ -5,8 +5,7 @@
 let currentCalendarId = null;
 let currentCalendar = null;
 let calendars = [];
-let displayStart = new Date();
-displayStart.setDate(displayStart.getDate() - 10);
+let displayStart = getWeekStart(new Date()); // always start on Sunday
 
 let currentDate = null;
 let quill = null;
@@ -88,6 +87,17 @@ function formatDate(date) {
   return `${y}-${m}-${d}`;
 }
 
+function deltaToHtml(delta) {
+  if (!delta || !delta.ops) return '';
+
+  const temp = document.createElement('div');
+  const q = new Quill(temp);
+  q.setContents(delta);
+
+  return temp.querySelector('.ql-editor').innerHTML;
+}
+
+
 function parseDate(str) {
   const [y, m, d] = str.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -96,28 +106,28 @@ function parseDate(str) {
 function getStatusColor(status) {
   if (!status) return 'text-slate-700';
   const s = status.toLowerCase();
-  if (s.includes('not')) return 'text-slate-700';
-  if (s.includes('progress')) return 'text-blue-600';
-  if (s.includes('done') || s.includes('complete')) return 'text-emerald-600';
-  if (s.includes('blocked') || s.includes('hold')) return 'text-amber-600';
+  if (s.includes('not')) return 'text-red-500';
+  if (s.includes('progress')) return 'text-yellow-500';
+  if (s.includes('complete')) return 'text-green-500';
   return 'text-slate-700';
 }
 
-// Extract first line of text from Quill delta
-function getFirstLine(delta) {
+// ===============================
+//  FULL TEXT EXTRACTION (IMPROVED)
+// ===============================
+
+function getFullText(delta) {
   if (!delta || !delta.ops) return '';
-  for (const op of delta.ops) {
-    if (typeof op.insert === 'string') {
-      const text = op.insert.trim();
-      if (text.length > 0) {
-        return text.split('\n').filter(Boolean)[0] || '';
-      }
-    }
-  }
-  return '';
+  return delta.ops
+    .map(op => (typeof op.insert === 'string' ? op.insert : ''))
+    .join('')
+    .trim();
 }
 
-// Extract last image URL from Quill delta
+// ===============================
+//  IMAGE EXTRACTION
+// ===============================
+
 function extractImageFromDelta(delta) {
   if (!delta || !delta.ops) return null;
   let lastImage = null;
@@ -129,7 +139,10 @@ function extractImageFromDelta(delta) {
   return lastImage;
 }
 
-// Upload image file to backend
+// ===============================
+//  IMAGE UPLOAD
+// ===============================
+
 async function uploadImageToServer(file) {
   const formData = new FormData();
   formData.append('image', file);
@@ -139,14 +152,11 @@ async function uploadImageToServer(file) {
     body: formData
   });
 
-  if (!res.ok) {
-    throw new Error('Image upload failed');
-  }
+  if (!res.ok) throw new Error('Image upload failed');
 
   const data = await res.json();
   return data.url;
 }
-
 // ===============================
 //  CALENDAR MANAGEMENT
 // ===============================
@@ -154,21 +164,16 @@ async function uploadImageToServer(file) {
 async function loadCalendars() {
   try {
     const res = await fetch('/api/calendars');
-    const data = await res.json();
-    calendars = data || [];
+    calendars = await res.json();
 
     if (calendars.length === 0) {
       const created = await createCalendar('Default', 'blue');
       calendars = [created];
     }
 
-    if (!currentCalendarId) {
-      currentCalendarId = calendars[0].id;
-    }
+    if (!currentCalendarId) currentCalendarId = calendars[0].id;
 
-    currentCalendar = calendars.find(c => c.id === currentCalendarId) || calendars[0];
-    currentCalendarId = currentCalendar.id;
-
+    currentCalendar = calendars.find(c => c.id === currentCalendarId);
     renderCalendarSelector();
     applyTheme();
     await loadCalendar();
@@ -179,9 +184,8 @@ async function loadCalendars() {
 
 function renderCalendarSelector() {
   const select = document.getElementById('calendar-select');
-  if (!select) return;
-
   select.innerHTML = '';
+
   calendars.forEach(cal => {
     const opt = document.createElement('option');
     opt.value = cal.id;
@@ -191,9 +195,8 @@ function renderCalendarSelector() {
   });
 
   select.onchange = () => {
-    const id = parseInt(select.value, 10);
-    currentCalendarId = id;
-    currentCalendar = calendars.find(c => c.id === id) || null;
+    currentCalendarId = parseInt(select.value, 10);
+    currentCalendar = calendars.find(c => c.id === currentCalendarId);
     applyTheme();
     loadCalendar();
   };
@@ -204,31 +207,30 @@ function applyTheme() {
 
   const todayBtn = document.getElementById('today-btn');
   const exportBtn = document.getElementById('export-btn');
-  const calendarSaveBtn = document.querySelector('#calendar-form-modal button[onclick="saveCalendarFromForm()"]');
+  const calendarSaveBtn = document.querySelector(
+    '#calendar-form-modal button[onclick="saveCalendarFromForm()"]'
+  );
 
-  const themedButtons = [todayBtn, exportBtn, calendarSaveBtn].filter(Boolean);
-
-  themedButtons.forEach(btn => {
-    btn.classList.remove(
-      'bg-blue-500','hover:bg-blue-400',
-      'bg-green-500','hover:bg-green-400',
-      'bg-amber-500','hover:bg-amber-400',
-      'bg-purple-500','hover:bg-purple-400',
-      'bg-rose-500','hover:bg-rose-400',
-      'bg-emerald-500','hover:bg-emerald-400'
-    );
-    btn.classList.add(theme.primaryBg, theme.primaryHover);
+  [todayBtn, exportBtn, calendarSaveBtn].forEach(btn => {
+    if (!btn) return;
+    btn.className = `px-4 py-2 rounded-xl text-white ${theme.primaryBg} ${theme.primaryHover}`;
   });
 
   const grid = document.getElementById('calendar');
-  if (grid) {
-    grid.className = `grid grid-cols-7 gap-4 p-4 rounded-3xl shadow ${theme.calendarBg}`;
-  }
+  grid.className = `grid grid-cols-7 grid-rows-2 gap-4 p-4 rounded-3xl shadow h-[75vh] ${theme.calendarBg}`;
 }
 
 // ===============================
 //  CALENDAR FORM HELPERS
 // ===============================
+
+function getWeekStart(baseDate) {
+  const d = new Date(baseDate);
+  const day = d.getDay(); // 0 = Sunday
+  d.setDate(d.getDate() - day);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
 function showCalendarForm(mode) {
   const modal = document.getElementById('calendar-form-modal');
@@ -236,12 +238,12 @@ function showCalendarForm(mode) {
   const nameInput = document.getElementById('calendar-name-input');
   const colorSelect = document.getElementById('calendar-color-select');
 
-  modal.setAttribute('data-mode', mode || 'create');
+  modal.setAttribute('data-mode', mode);
 
-  if (mode === 'edit' && currentCalendar) {
+  if (mode === 'edit') {
     title.textContent = 'Edit Calendar';
     nameInput.value = currentCalendar.name;
-    colorSelect.value = currentCalendar.color || 'blue';
+    colorSelect.value = currentCalendar.color;
   } else {
     title.textContent = 'New Calendar';
     nameInput.value = '';
@@ -254,7 +256,6 @@ function showCalendarForm(mode) {
 function hideCalendarForm() {
   const modal = document.getElementById('calendar-form-modal');
   modal.classList.add('hidden');
-  modal.removeAttribute('data-mode');
 }
 
 async function createCalendar(name, color) {
@@ -263,7 +264,6 @@ async function createCalendar(name, color) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, color })
   });
-  if (!res.ok) throw new Error('Failed to create calendar');
   return await res.json();
 }
 
@@ -273,488 +273,83 @@ async function updateCalendar(id, name, color) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, color })
   });
-  if (!res.ok) throw new Error('Failed to update calendar');
   return await res.json();
 }
 
 async function deleteCurrentCalendar() {
-  if (!currentCalendarId) return;
-  const cal = calendars.find(c => c.id === currentCalendarId);
-  if (!cal) return;
+  if (!confirm('Delete this calendar?')) return;
 
-  if (!confirm(`Delete calendar "${cal.name}" and all its notes, reminders, and tasks?`)) return;
-
-  try {
-    const res = await fetch(`/api/calendars/${currentCalendarId}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      alert(err.error || 'Failed to delete calendar');
-      return;
-    }
-
-    await loadCalendars();
-  } catch (e) {
-    console.error('Failed to delete calendar:', e);
-    alert('Failed to delete calendar');
-  }
+  await fetch(`/api/calendars/${currentCalendarId}`, { method: 'DELETE' });
+  await loadCalendars();
 }
 
 async function saveCalendarFromForm() {
   const modal = document.getElementById('calendar-form-modal');
-  const nameInput = document.getElementById('calendar-name-input');
-  const colorSelect = document.getElementById('calendar-color-select');
+  const mode = modal.getAttribute('data-mode');
+  const name = document.getElementById('calendar-name-input').value.trim();
+  const color = document.getElementById('calendar-color-select').value;
 
-  const mode = modal.getAttribute('data-mode') || 'create';
-  const name = nameInput.value.trim();
-  const color = colorSelect.value;
+  if (!name) return alert('Name required');
 
-  if (!name) {
-    alert('Calendar name is required');
-    return;
+  if (mode === 'edit') {
+    await updateCalendar(currentCalendarId, name, color);
+  } else {
+    const created = await createCalendar(name, color);
+    currentCalendarId = created.id;
   }
 
-  try {
-    if (mode === 'edit' && currentCalendar) {
-      const updated = await updateCalendar(currentCalendar.id, name, color);
-      const idx = calendars.findIndex(c => c.id === updated.id);
-      if (idx !== -1) calendars[idx] = updated;
-      currentCalendar = updated;
-      currentCalendarId = updated.id;
-    } else {
-      const created = await createCalendar(name, color);
-      calendars.push(created);
-      currentCalendar = created;
-      currentCalendarId = created.id;
-    }
-
-    hideCalendarForm();
-    renderCalendarSelector();
-    applyTheme();
-    await loadCalendar();
-  } catch (e) {
-    console.error('Failed to save calendar:', e);
-    alert('Failed to save calendar');
-  }
+  hideCalendarForm();
+  await loadCalendars();
 }
 
 // ===============================
-//  LOAD MODAL DATA (REMINDERS + TASKS)
+//  LOAD MODAL DATA (TASKS ONLY)
 // ===============================
 
 async function loadModalData(dateStr) {
-  if (!currentCalendarId) return;
-
-  try {
-    const [remRes, taskRes] = await Promise.all([
-      fetch(`/api/reminders?calendarId=${currentCalendarId}`),
-      fetch(`/api/tasks?calendarId=${currentCalendarId}`)
-    ]);
-
-    const allReminders = await remRes.json();
-    const allTasks = await taskRes.json();
-
-    const dateReminders = allReminders.filter(r => r.note_date === dateStr);
-    const dateTasks = allTasks.filter(t => t.note_date === dateStr);
-
-    renderReminders(dateReminders);
-    renderTasks(dateTasks);
-  } catch (e) {
-    console.error('Failed to load modal data:', e);
-  }
+  const res = await fetch(`/api/tasks?calendarId=${currentCalendarId}`);
+  const allTasks = await res.json();
+  const dateTasks = allTasks.filter(t => t.note_date === dateStr);
+  renderTasks(dateTasks);
 }
 
 // ===============================
-//  TICKER (UPCOMING REMINDERS + TASKS)
+//  TICKER (TASKS ONLY)
 // ===============================
 
-function updateTicker(reminders, tasks) {
-  const tickerContainer = document.getElementById('ticker-content');
-  if (!tickerContainer) return;
+function updateTicker(tasks) {
+  const ticker = document.getElementById('ticker-content');
+  ticker.innerHTML = '';
 
-  const upcoming = [];
   const now = new Date();
   const next7 = new Date();
   next7.setDate(now.getDate() + 7);
 
-  reminders.forEach(r => {
-    const d = new Date(r.note_date);
-    if (d >= now && d <= next7) {
-      upcoming.push({
-        type: 'reminder',
-        date: d,
-        message: r.message,
-        time: r.reminder_time
-      });
-    }
-  });
-
-  tasks.forEach(t => {
+  const upcoming = tasks.filter(t => {
     const d = new Date(t.note_date);
-    if (d >= now && d <= next7) {
-      upcoming.push({
-        type: 'task',
-        date: d,
-        message: t.subject,
-        status: t.status
-      });
-    }
+    return d >= now && d <= next7;
   });
-
-  upcoming.sort((a, b) => a.date - b.date);
 
   if (upcoming.length === 0) {
-    tickerContainer.innerHTML = `<span class="text-slate-400">No upcoming items</span>`;
+    ticker.innerHTML = `<span class="text-slate-400">No upcoming items</span>`;
     return;
   }
 
-  let html = '';
   upcoming.forEach(item => {
-    const dateStr = item.date.toLocaleDateString();
-    const timeStr = item.time ? `at ${item.time}` : '';
-    const statusStr = item.status ? `[${item.status}]` : '';
-    const icon = item.type === 'reminder' ? '🔔' : '📋';
-    const color = item.type === 'reminder' ? 'text-amber-600' : 'text-blue-600';
-
-    html += `
-      <span class="${color} mx-4 whitespace-nowrap">
-        ${icon} ${dateStr} ${timeStr} - ${item.message} ${statusStr}
+    ticker.innerHTML += `
+      <span class="text-blue-600 mx-4 whitespace-nowrap">
+        📋 ${new Date(item.note_date).toLocaleDateString()} - ${item.subject} [${item.status}]
       </span>
     `;
   });
-
-  tickerContainer.innerHTML = html;
 }
-
-// ===============================
-//  LOAD CALENDAR GRID
-// ===============================
-
-async function loadCalendar() {
-  if (!currentCalendarId) return;
-
-  const end = new Date(displayStart);
-  end.setDate(end.getDate() + 20);
-
-  const startStr = formatDate(displayStart);
-  const endStr = formatDate(end);
-
-  try {
-    const [notesRes, remindersRes, tasksRes] = await Promise.all([
-      fetch(`/api/calendar?start=${startStr}&end=${endStr}&calendarId=${currentCalendarId}`),
-      fetch(`/api/reminders?calendarId=${currentCalendarId}`),
-      fetch(`/api/tasks?calendarId=${currentCalendarId}`)
-    ]);
-
-    const notes = await notesRes.json();
-    const reminders = await remindersRes.json();
-    const tasks = await tasksRes.json();
-
-    updateTicker(reminders, tasks);
-
-    const monthTitle = document.getElementById('month-title');
-    if (monthTitle) {
-      monthTitle.textContent = new Date(displayStart).toLocaleString('default', {
-        month: 'long',
-        year: 'numeric'
-      });
-    }
-
-    const grid = document.getElementById('calendar');
-    if (!grid) return;
-    grid.innerHTML = '';
-
-    const theme = getCurrentTheme();
-
-    for (let i = 0; i < 21; i++) {
-      const date = new Date(displayStart);
-      date.setDate(date.getDate() + i);
-      const dateStr = formatDate(date);
-      const isToday = dateStr === formatDate(new Date());
-      const note = notes[dateStr];
-
-      let bgImage = null;
-      if (note) {
-        try {
-          const parsed = typeof note === 'string' ? JSON.parse(note) : note;
-          bgImage = extractImageFromDelta(parsed);
-        } catch {}
-      }
-
-      const cell = document.createElement('div');
-      cell.className = `
-        rounded-2xl shadow-sm overflow-hidden cursor-pointer transition hover:shadow-md
-        ${theme.dayBg}
-        ${isToday ? `${theme.todayBg} ring-2 ${theme.todayRing}` : ''}
-        relative
-        h-[220px]
-        flex flex-col
-      `;
-
-      if (bgImage) {
-  cell.style.position = 'relative';
-  cell.innerHTML += `
-    <div class="absolute inset-0 bg-cover bg-center opacity-70 pointer-events-none"
-         style="background-image: url('${bgImage}'); z-index:0;"></div>
-  `;
-}
-
-      const overlay = document.createElement('div');
-      overlay.className = 'absolute inset-0 bg-white/30 pointer-events-none';
-      cell.appendChild(overlay);
-
-      const content = document.createElement('div');
-      content.className = 'relative z-10 flex flex-col h-full';
-
-      const top = document.createElement('div');
-      top.className = 'p-4 flex-1';
-
-      top.innerHTML = `
-        <div class="text-4xl font-semibold mb-2 ${isToday ? theme.accentText : 'text-slate-700'}">
-          ${date.getDate()}
-        </div>
-      `;
-
-      if (note) {
-        try {
-          const parsed = typeof note === 'string' ? JSON.parse(note) : note;
-          const firstLine = getFirstLine(parsed);
-          if (firstLine) {
-            top.innerHTML += `
-              <div class="text-sm text-slate-700 line-clamp-3">${firstLine}</div>
-            `;
-          }
-        } catch {}
-      }
-
-      const bottom = document.createElement('div');
-      bottom.className = `
-        h-12 border-t border-slate-300 bg-white/60 backdrop-blur-sm
-        flex
-      `;
-
-      const dayReminders = reminders.filter(r => r.note_date === dateStr);
-      const dayTasks = tasks.filter(t => t.note_date === dateStr);
-
-      bottom.innerHTML = `
-        <div class="w-1/2 flex items-center justify-center text-amber-600 text-sm">
-          ${dayReminders.length > 0 ? `🔔 ${dayReminders.length}` : `<span class="text-slate-400 text-xs">0</span>`}
-        </div>
-        <div class="w-1/2 flex items-center justify-center text-blue-600 text-sm">
-          ${dayTasks.length > 0 ? `📋 ${dayTasks.length}` : `<span class="text-slate-400 text-xs">0</span>`}
-        </div>
-      `;
-
-      content.appendChild(top);
-      content.appendChild(bottom);
-      cell.appendChild(content);
-
-      cell.onclick = () => openNoteModal(dateStr);
-      grid.appendChild(cell);
-    }
-  } catch (error) {
-    console.error('Error loading calendar:', error);
-    const grid = document.getElementById('calendar');
-    if (grid) {
-      grid.innerHTML = `<div class="col-span-7 text-center text-red-500 p-8">Error loading calendar</div>`;
-    }
-  }
-}
-
-// ===============================
-//  RENDER REMINDERS
-// ===============================
-
-function renderReminders(reminders) {
-  const container = document.getElementById('modal-reminders-list');
-  if (!container) return;
-
-  container.innerHTML = '';
-
-  if (reminders.length === 0) {
-    container.innerHTML = `<div class="text-slate-500 text-sm italic p-2">No reminders for this day.</div>`;
-    return;
-  }
-
-  reminders.forEach(rem => {
-    const item = document.createElement('div');
-    item.className = `
-      flex items-center justify-between 
-      bg-white rounded-xl px-4 py-3 text-sm mb-2 shadow-sm 
-      cursor-pointer hover:bg-slate-100
-    `;
-
-    item.innerHTML = `
-      <div class="flex-1">
-        <div class="font-medium text-amber-600">${rem.message}</div>
-        <div class="text-xs text-slate-500 mt-1">${rem.reminder_time || 'No time set'}</div>
-      </div>
-      <button 
-        onclick="deleteReminder(${rem.id}); event.stopPropagation();"
-        class="ml-4 px-3 py-1 text-red-500 hover:bg-red-100 rounded-xl text-xl leading-none"
-      >×</button>
-    `;
-
-    item.querySelector('.flex-1').addEventListener('click', () => {
-      editReminder(rem);
-    });
-
-    container.appendChild(item);
-  });
-}
-
-// ===============================
-//  RENDER TASKS
-// ===============================
-
-function renderTasks(tasks) {
-  const container = document.getElementById('modal-tasks-list');
-  if (!container) return;
-
-  container.innerHTML = '';
-
-  if (tasks.length === 0) {
-    container.innerHTML = `<div class="text-slate-500 text-sm italic p-2">No tasks for this day.</div>`;
-    return;
-  }
-
-  tasks.forEach(task => {
-    const statusColor = getStatusColor(task.status);
-
-    let timeInfo = '';
-    if (task.start_datetime || task.end_datetime) {
-      const start = task.start_datetime ? task.start_datetime.replace('T', ' ') : '';
-      const end = task.end_datetime ? task.end_datetime.replace('T', ' ') : '';
-      timeInfo = `<div class="text-xs text-slate-500 mt-1">${start} ${end ? '→ ' + end : ''}</div>`;
-    }
-
-    const item = document.createElement('div');
-    item.className = `
-      flex items-center justify-between 
-      bg-white rounded-xl px-4 py-3 text-sm mb-2 shadow-sm 
-      cursor-pointer hover:bg-slate-100
-    `;
-
-    item.innerHTML = `
-      <div class="flex-1">
-        <div class="flex justify-between items-start">
-          <div class="font-medium ${statusColor}">${task.subject}</div>
-          <span class="${statusColor} text-xs font-medium px-3 py-0.5 rounded-full ">
-            ${task.status}
-          </span>
-        </div>
-        ${task.description ? `<div class="text-xs text-slate-500 mt-1 line-clamp-1">${task.description}</div>` : ''}
-        ${timeInfo}
-      </div>
-
-      <button 
-        onclick="deleteTask(${task.id}); event.stopPropagation();"
-        class="ml-4 px-3 py-1 text-red-500 hover:bg-red-100 rounded-xl text-xl leading-none"
-      >×</button>
-    `;
-
-    item.querySelector('.flex-1').addEventListener('click', () => {
-      editTask(task);
-    });
-
-    container.appendChild(item);
-  });
-}
-
-// ===============================
-//  DELETE REMINDER
-// ===============================
-
-async function deleteReminder(id) {
-  if (!confirm('Delete this reminder?')) return;
-
-  try {
-    await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
-    if (currentDate) await loadModalData(currentDate);
-    loadCalendar();
-  } catch (e) {
-    console.error(e);
-    alert('Failed to delete reminder');
-  }
-}
-
-// ===============================
-//  DELETE TASK
-// ===============================
-
-async function deleteTask(id) {
-  if (!confirm('Delete this task?')) return;
-
-  try {
-    await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
-    if (currentDate) await loadModalData(currentDate);
-    loadCalendar();
-  } catch (e) {
-    console.error(e);
-    alert('Failed to delete task');
-  }
-}
-
-// ===============================
-//  EDIT REMINDER
-// ===============================
-
-function editReminder(rem) {
-  const subjectInput = document.getElementById('reminder-subject-input');
-  const descInput = document.getElementById('reminder-desc-input');
-  const timeInput = document.getElementById('reminder-time-input');
-  const form = document.getElementById('reminder-form');
-
-  let subject = rem.message;
-  let desc = '';
-
-  if (rem.message.includes(' - ')) {
-    const parts = rem.message.split(' - ');
-    subject = parts[0];
-    desc = parts.slice(1).join(' - ');
-  }
-
-  subjectInput.value = subject;
-  descInput.value = desc;
-  timeInput.value = rem.reminder_time || '';
-
-  form.setAttribute('data-id', rem.id);
-  form.setAttribute('data-mode', 'edit');
-
-  showReminderForm();
-}
-
-// ===============================
-//  EDIT TASK
-// ===============================
-
-function editTask(task) {
-  const subjectInput = document.getElementById('task-subject-input');
-  const descInput = document.getElementById('task-desc-textarea');
-  const startInput = document.getElementById('task-start-input');
-  const endInput = document.getElementById('task-end-input');
-  const statusSelect = document.getElementById('task-status-select');
-  const form = document.getElementById('task-form');
-
-  subjectInput.value = task.subject || '';
-  descInput.value = task.description || '';
-  startInput.value = task.start_datetime || '';
-  endInput.value = task.end_datetime || '';
-  statusSelect.value = task.status || 'Not Started';
-
-  form.setAttribute('data-id', task.id);
-  form.setAttribute('data-mode', 'edit');
-
-  showTaskForm();
-}
-
 // ===============================
 //  OPEN NOTE MODAL + QUILL SETUP
 // ===============================
 
 async function openNoteModal(dateStr) {
-  if (!currentCalendarId) return;
-
   currentDate = dateStr;
+
   const dateObj = parseDate(dateStr);
 
   const dateDisplay = document.getElementById('modal-date-display');
@@ -767,9 +362,11 @@ async function openNoteModal(dateStr) {
   const modal = document.getElementById('note-modal');
   modal.classList.remove('hidden');
 
+  // Reset editor container
   const container = document.getElementById('editor-container');
   container.innerHTML = `<div id="editor" class="bg-white text-slate-900 rounded-2xl shadow-inner flex-1"></div>`;
 
+  // Initialize Quill
   quill = new Quill('#editor', {
     theme: 'snow',
     modules: {
@@ -799,6 +396,16 @@ async function openNoteModal(dateStr) {
     }
   });
 
+  // Style divider button
+  setTimeout(() => {
+    const dividerBtn = document.querySelector('.ql-divider');
+    if (dividerBtn) {
+      dividerBtn.innerHTML = '<i>―</i>';
+      dividerBtn.title = 'Insert Horizontal Line';
+      dividerBtn.style.fontWeight = 'bold';
+    }
+  }, 100);
+
   // Custom image handler (toolbar)
   toolbar.addHandler('image', () => {
     const input = document.createElement('input');
@@ -823,23 +430,13 @@ async function openNoteModal(dateStr) {
     input.click();
   });
 
-  // Style divider button
-  setTimeout(() => {
-    const dividerBtn = document.querySelector('.ql-divider');
-    if (dividerBtn) {
-      dividerBtn.innerHTML = '<i>―</i>';
-      dividerBtn.title = 'Insert Horizontal Line';
-      dividerBtn.style.fontWeight = 'bold';
-    }
-  }, 100);
-
   // Paste image support
   quill.root.addEventListener('paste', async (e) => {
-    const items = e.clipboardData && e.clipboardData.items;
+    const items = e.clipboardData?.items;
     if (!items) return;
 
     for (const item of items) {
-      if (item.type && item.type.startsWith('image/')) {
+      if (item.type.startsWith('image/')) {
         e.preventDefault();
         const file = item.getAsFile();
         if (!file) continue;
@@ -859,11 +456,8 @@ async function openNoteModal(dateStr) {
 
   // Drag & drop image support
   quill.root.addEventListener('drop', async (e) => {
-    const dt = e.dataTransfer;
-    if (!dt || !dt.files || dt.files.length === 0) return;
-
-    const file = dt.files[0];
-    if (!file.type.startsWith('image/')) return;
+    const file = e.dataTransfer?.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -884,7 +478,9 @@ async function openNoteModal(dateStr) {
     const res = await fetch(`/api/notes/${dateStr}?calendarId=${currentCalendarId}`);
     const data = await res.json();
     if (data) quill.setContents(data);
-  } catch {}
+  } catch (e) {
+    console.warn('No existing note or failed to load note:', e);
+  }
 
   await loadModalData(dateStr);
 }
@@ -921,80 +517,94 @@ async function saveNote() {
 
 function closeModal() {
   saveNote();
-  const modal = document.getElementById('note-modal');
-  modal.classList.add('hidden');
+  document.getElementById('note-modal').classList.add('hidden');
   currentDate = null;
 }
-
 // ===============================
-//  REMINDER FORM
+//  RENDER TASKS (MODAL)
 // ===============================
 
-function showReminderForm() {
-  document.getElementById('reminder-form').classList.remove('hidden');
-}
+function renderTasks(tasks) {
+  const container = document.getElementById('modal-tasks-list');
+  container.innerHTML = '';
 
-function hideReminderForm() {
-  const form = document.getElementById('reminder-form');
-  form.classList.add('hidden');
-  form.removeAttribute('data-id');
-  form.removeAttribute('data-mode');
-
-  document.getElementById('reminder-subject-input').value = '';
-  document.getElementById('reminder-desc-input').value = '';
-  document.getElementById('reminder-time-input').value = '';
-}
-
-async function saveReminder() {
-  if (!currentDate || !currentCalendarId) return;
-
-  const subject = document.getElementById('reminder-subject-input').value.trim();
-  const desc = document.getElementById('reminder-desc-input').value.trim();
-  const time = document.getElementById('reminder-time-input').value;
-
-  if (!subject) {
-    alert('Reminder subject is required');
+  if (tasks.length === 0) {
+    container.innerHTML = `<div class="text-slate-500 text-sm italic p-2">No tasks for this day.</div>`;
     return;
   }
 
-  const message = desc ? `${subject} - ${desc}` : subject;
+  tasks.forEach(task => {
+    const statusColor = getStatusColor(task.status);
 
-  const form = document.getElementById('reminder-form');
-  const mode = form.getAttribute('data-mode');
-  const id = form.getAttribute('data-id');
-
-  try {
-    if (mode === 'edit' && id) {
-      await fetch(`/api/reminders/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          calendar_id: currentCalendarId,
-          note_date: currentDate,
-          reminder_time: time,
-          message
-        })
-      });
-    } else {
-      await fetch('/api/reminders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          calendar_id: currentCalendarId,
-          note_date: currentDate,
-          reminder_time: time,
-          message
-        })
-      });
+    let timeInfo = '';
+    if (task.start_datetime || task.end_datetime) {
+      const start = task.start_datetime ? task.start_datetime.replace('T', ' ') : '';
+      const end = task.end_datetime ? task.end_datetime.replace('T', ' ') : '';
+      timeInfo = `<div class="text-xs text-slate-500 mt-1">${start} ${end ? '→ ' + end : ''}</div>`;
     }
 
-    hideReminderForm();
-    await loadModalData(currentDate);
-    loadCalendar();
-  } catch (e) {
-    console.error('Failed to save reminder:', e);
-    alert('Failed to save reminder');
-  }
+    const item = document.createElement('div');
+    item.className = `
+      flex items-center justify-between 
+      bg-white rounded-xl px-4 py-3 text-sm mb-2 shadow-sm 
+      cursor-pointer hover:bg-slate-100
+    `;
+
+    item.innerHTML = `
+      <div class="flex-1">
+        <div class="flex justify-between items-start">
+          <div class="font-medium ${statusColor}">${task.subject}</div>
+          <span class="${statusColor} text-xs font-medium px-3 py-0.5 rounded-full">
+            ${task.status}
+          </span>
+        </div>
+        ${task.description ? `<div class="text-xs text-slate-500 mt-1 line-clamp-1">${task.description}</div>` : ''}
+        ${timeInfo}
+      </div>
+
+      <button 
+        onclick="deleteTask(${task.id}); event.stopPropagation();"
+        class="ml-4 px-3 py-1 text-red-500 hover:bg-red-100 rounded-xl text-xl leading-none"
+      >×</button>
+    `;
+
+    item.querySelector('.flex-1').addEventListener('click', () => {
+      editTask(task);
+    });
+
+    container.appendChild(item);
+  });
+}
+
+// ===============================
+//  DELETE TASK
+// ===============================
+
+async function deleteTask(id) {
+  if (!confirm('Delete this task?')) return;
+
+  await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+
+  if (currentDate) await loadModalData(currentDate);
+  loadCalendar();
+}
+
+// ===============================
+//  EDIT TASK
+// ===============================
+
+function editTask(task) {
+  document.getElementById('task-subject-input').value = task.subject || '';
+  document.getElementById('task-desc-textarea').value = task.description || '';
+  document.getElementById('task-start-input').value = task.start_datetime || '';
+  document.getElementById('task-end-input').value = task.end_datetime || '';
+  document.getElementById('task-status-select').value = task.status || 'Not Started';
+
+  const form = document.getElementById('task-form');
+  form.setAttribute('data-id', task.id);
+  form.setAttribute('data-mode', 'edit');
+
+  showTaskForm();
 }
 
 // ===============================
@@ -1027,43 +637,34 @@ async function saveTask() {
   const end = document.getElementById('task-end-input').value;
   const status = document.getElementById('task-status-select').value;
 
-  if (!subject) {
-    alert('Task subject is required');
-    return;
-  }
+  if (!subject) return alert('Task subject is required');
 
   const form = document.getElementById('task-form');
   const mode = form.getAttribute('data-mode');
   const id = form.getAttribute('data-id');
 
+  const payload = {
+    calendar_id: currentCalendarId,
+    note_date: currentDate,
+    subject,
+    description: desc,
+    start_datetime: start,
+    end_datetime: end,
+    status
+  };
+
   try {
-    if (mode === 'edit' && id) {
+    if (mode === 'edit') {
       await fetch(`/api/tasks/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          calendar_id: currentCalendarId,
-          note_date: currentDate,
-          subject,
-          description: desc,
-          start_datetime: start,
-          end_datetime: end,
-          status
-        })
+        body: JSON.stringify(payload)
       });
     } else {
       await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          calendar_id: currentCalendarId,
-          note_date: currentDate,
-          subject,
-          description: desc,
-          start_datetime: start,
-          end_datetime: end,
-          status
-        })
+        body: JSON.stringify(payload)
       });
     }
 
@@ -1075,7 +676,113 @@ async function saveTask() {
     alert('Failed to save task');
   }
 }
+// ===============================
+//  LOAD CALENDAR GRID (14 DAYS)
+// ===============================
 
+async function loadCalendar() {
+  const end = new Date(displayStart);
+  end.setDate(end.getDate() + 13);
+
+  const startStr = formatDate(displayStart);
+  const endStr = formatDate(end);
+
+  const [notesRes, tasksRes] = await Promise.all([
+    fetch(`/api/calendar?start=${startStr}&end=${endStr}&calendarId=${currentCalendarId}`),
+    fetch(`/api/tasks?calendarId=${currentCalendarId}`)
+  ]);
+
+  const notes = await notesRes.json();
+  const tasks = await tasksRes.json();
+
+  updateTicker(tasks);
+
+  const monthTitle = document.getElementById('month-title');
+  monthTitle.textContent = new Date(displayStart).toLocaleString('default', {
+    month: 'long',
+    year: 'numeric'
+  });
+
+  const grid = document.getElementById('calendar');
+  grid.innerHTML = '';
+
+  const theme = getCurrentTheme();
+
+  for (let i = 0; i < 14; i++) {
+    const date = new Date(displayStart);
+    date.setDate(date.getDate() + i);
+    const dateStr = formatDate(date);
+    const isToday = dateStr === formatDate(new Date());
+    const note = notes[dateStr];
+
+    // Extract background image (if any)
+    let bgImage = null;
+    if (note) {
+      try {
+        bgImage = extractImageFromDelta(note);
+      } catch {}
+    }
+
+    // Create day cell
+    const cell = document.createElement('div');
+    cell.className = `
+      rounded-2xl shadow-sm overflow-hidden cursor-pointer transition hover:shadow-md
+      ${theme.dayBg}
+      ${isToday ? `${theme.todayBg} ring-2 ${theme.todayRing}` : ''}
+      relative flex flex-col h-full
+    `;
+
+    // Background image layer
+    if (bgImage) {
+      cell.innerHTML += `
+        <div class="absolute inset-0 bg-cover bg-center opacity-70 pointer-events-none"
+             style="background-image: url('${bgImage}');"></div>
+      `;
+    }
+
+    // White overlay for readability
+    const overlay = document.createElement('div');
+    overlay.className = 'absolute inset-0 bg-white/30 pointer-events-none';
+    cell.appendChild(overlay);
+
+    // Content wrapper
+    const content = document.createElement('div');
+    content.className = 'relative z-10 flex flex-col h-full';
+
+    // TOP SECTION — DATE + NOTE PREVIEW
+    const top = document.createElement('div');
+    top.className = 'flex-1 p-3 overflow-auto'; // scrollable
+
+    // Date number
+    top.innerHTML = `
+      <div class="text-3xl font-semibold mb-2 ${isToday ? theme.accentText : 'text-slate-700'}">
+        ${date.getDate()}
+      </div>
+    `;
+
+    // Full note preview
+    if (note) {
+      const html = deltaToHtml(note);
+if (html) {
+  top.innerHTML += `
+    <div class="note-preview ql-editor text-[0.75rem] leading-snug overflow-auto">
+      ${html}
+    </div>
+  `;
+}
+
+    }
+
+    // Append content
+    content.appendChild(top);
+    cell.appendChild(content);
+
+    // Click to open modal
+    cell.onclick = () => openNoteModal(dateStr);
+
+    grid.appendChild(cell);
+  }
+}
 // ===============================
 //  NAVIGATION
 // ===============================
@@ -1091,8 +798,7 @@ function nextWeek() {
 }
 
 function today() {
-  displayStart = new Date();
-  displayStart.setDate(displayStart.getDate() - 10);
+  displayStart = getWeekStart(new Date());
   loadCalendar();
 }
 
@@ -1102,17 +808,15 @@ function today() {
 
 async function exportData() {
   try {
-    const [notesRes, remindersRes, tasksRes, calendarsRes] = await Promise.all([
-      fetch('/api/calendar?start=0000-01-01&end=9999-12-31&calendarId=' + currentCalendarId),
-      fetch('/api/reminders?calendarId=' + currentCalendarId),
-      fetch('/api/tasks?calendarId=' + currentCalendarId),
+    const [notesRes, tasksRes, calendarsRes] = await Promise.all([
+      fetch(`/api/calendar?start=0000-01-01&end=9999-12-31&calendarId=${currentCalendarId}`),
+      fetch(`/api/tasks?calendarId=${currentCalendarId}`),
       fetch('/api/calendars')
     ]);
 
     const data = {
       calendars: await calendarsRes.json(),
       notes: await notesRes.json(),
-      reminders: await remindersRes.json(),
       tasks: await tasksRes.json()
     };
 
@@ -1141,9 +845,8 @@ async function importData(event) {
 
   try {
     const text = await file.text();
-    const data = JSON.parse(text);
-
-    alert('Import feature is not yet implemented in this merged version.');
+    JSON.parse(text);
+    alert('Import feature not implemented yet.');
   } catch (e) {
     console.error('Import failed:', e);
     alert('Import failed');
@@ -1156,4 +859,4 @@ async function importData(event) {
 
 window.addEventListener('DOMContentLoaded', () => {
   loadCalendars();
-  });
+});

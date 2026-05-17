@@ -25,6 +25,14 @@ const storage = multer.diskStorage({
   }
 });
 
+app.use((req, res, next) => {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    next();
+});
+
+
 const upload = multer({ storage });
 
 // Serve uploaded files
@@ -278,7 +286,7 @@ app.post('/api/notes/:date', (req, res) => {
 
 
 // =========================
-// 📌 REMINDERS API
+// 📌 REMINDERS API (kept, but no longer used in UI)
 // =========================
 
 app.get('/api/reminders', (req, res) => {
